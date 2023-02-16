@@ -1,50 +1,25 @@
 const request = require('request');
 const urlExist = require('url-exist');
-// const links = [
-//   {
-//     title:
-//       "Guiding Officers to Deflect Citizens to Treatment: An Examination of Police Department Policies in Illinois",
-//     publicationDate: "2023-02-10",
-//     fileURL:
-//       "https://researchhub.icjia-api.cloud/uploads/PDF%20policy%20paper-230210T21141657.pdf1",
-//   },
-//   {
-//     title:
-//       "Criminal History Record Checks for Federally Assisted Housing: A Progress Report",
-//     publicationDate: "2023-02-07",
-//     fileURL:
-//       "https://researchhub.icjia-api.cloud/uploads/FINAL%20REPORT%20PDF%20FOR%20POSTING-230207T16344430.pdf",
-//   },
-//   {
-//     title:
-//       "Evaluation of the Development of a Multijurisdictional Police-Based Deflection Program in Southern Illinois",
-//     publicationDate: "2023-02-07",
-//     fileURL:
-//       "https://researchhub.icjia-api.cloud/uploads/FINAL%20PDF%20FOR%20POSTING-230207T17003598.pdf",
-//   },
-// ];
+require('dotenv').config();
 
 /* eslint-disable no-unused-vars */
 const fs = require('fs');
 const axios = require('axios');
 const jsonfile = require('jsonfile');
 const _ = require('lodash');
-// const { apiBaseURL } = require("./src/config");
-const allowedHost = 'https://icjia.illinois.gov/researchhub';
+const API = process.env.API;
 
 const init = async () => {
   const limit = 500;
   let pubArray = [];
   let start = 0;
-  let count = await axios.get(
-    'https://agency.icjia-api.cloud/publications/count',
-  );
+  let count = await axios.get(`${API}/publications/count`);
   count = count.data;
   let iterations = Math.ceil(count / limit);
 
   for (let i = 0; i < iterations; i++) {
     let response = await axios.get(
-      `https://agency.icjia-api.cloud/publications?_limit=${limit}&_start=${start}`,
+      `${API}/publications?_limit=${limit}&_start=${start}`,
     );
     pubArray = pubArray.concat(response.data);
     start += limit;
@@ -58,22 +33,60 @@ const init = async () => {
     obj.title = p.title;
     obj.publicationDate = p.publicationDate;
     obj.fileURL = p.fileURL.replace(/ /g, '%20');
+    obj.pubPath = `${process.env.WEBSITE}/about/publications/${p.slug}`;
+    obj.canonical = p.fileURL;
     return obj;
   });
   let content = [...publications];
   content = _.orderBy(content, ['publicationDate'], ['desc']);
+
+  // filter out all links that are not from the variable content
+  badLinks = content.filter((c) => c.result);
+
   Promise.all(
     content.map(async (item) => {
       const result = await urlExist(item.fileURL);
       return { status: result, item };
     }),
   ).then((res) => {
-    jsonfile.writeFileSync(`./links.json`, res, function (err) {
-      if (err) {
-        console.error(err);
-      }
-    });
-    console.log('link file written --> ./links.json');
+    // filter out bad status from res
+    let badLinks = res.filter((r) => r.status === false);
+
+    //badLinks = badLinks.map((b) => b.item);
+
+    jsonfile.writeFileSync(
+      `./api/allLinks.json`,
+      res,
+      function (err) {
+        if (err) {
+          console.error(err);
+        }
+      },
+    );
+    jsonfile.writeFileSync(
+      `./api/badLinks.json`,
+      badLinks,
+      function (err) {
+        if (err) {
+          console.error(err);
+        }
+      },
+    );
+
+    // write a json file containing the current date and time
+    let date = new Date();
+    let dateStr = 'Last Updated: ' + date.toISOString();
+    jsonfile.writeFileSync(
+      `./api/lastUpdated.json`,
+      dateStr,
+      function (err) {
+        if (err) {
+          console.error(err);
+        }
+      },
+    );
+
+    console.log('links files written.');
   });
 };
 
